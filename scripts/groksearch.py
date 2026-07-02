@@ -145,7 +145,7 @@ def skill_config_candidates() -> list[Path]:
     return [root / "config.toml"]
 
 
-def fallback_config_candidates() -> list[Path]:
+def user_config_candidates() -> list[Path]:
     paths: list[Path] = []
     userprofile = os.environ.get("USERPROFILE")
     if userprofile:
@@ -155,6 +155,11 @@ def fallback_config_candidates() -> list[Path]:
         paths.append(Path(home) / ".config" / "grok-search-skill" / "config.toml")
     else:
         paths.append(Path.home() / ".config" / "grok-search-skill" / "config.toml")
+    return dedupe_paths(paths)
+
+
+def fallback_config_candidates() -> list[Path]:
+    paths: list[Path] = []
     explicit = os.environ.get("WEB_RESEARCH_CONFIG")
     if explicit:
         explicit_path = Path(explicit).expanduser()
@@ -163,8 +168,32 @@ def fallback_config_candidates() -> list[Path]:
     return dedupe_paths(paths)
 
 
+def config_file_sources() -> list[tuple[str, Path]]:
+    entries = [
+        *(("user", path) for path in user_config_candidates()),
+        *(("skill-local", path) for path in skill_config_candidates()),
+        *(("fallback", path) for path in fallback_config_candidates()),
+    ]
+    seen: set[str] = set()
+    result: list[tuple[str, Path]] = []
+    for source, path in entries:
+        key = str(path.expanduser()).lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        result.append((source, path))
+    return result
+
+
 def config_file_candidates() -> list[Path]:
-    return dedupe_paths(skill_config_candidates() + fallback_config_candidates())
+    return [path for _, path in config_file_sources()]
+
+
+def config_file_statuses() -> list[dict[str, Any]]:
+    return [
+        {"priority": index, "source": source, "path": str(path), "exists": path.exists()}
+        for index, (source, path) in enumerate(config_file_sources(), start=1)
+    ]
 
 
 def read_config_file(path: Path) -> dict[str, Any]:
@@ -174,8 +203,23 @@ def read_config_file(path: Path) -> dict[str, Any]:
     return tomllib.loads(text)
 
 
+def config_value_is_effective(key: str, value: Any) -> bool:
+    if isinstance(value, str):
+        return bool(value.strip())
+    if key.endswith("_upstreams") and isinstance(value, list):
+        provider = key[: -len("_upstreams")]
+        return any(
+            isinstance(raw, dict)
+            and has_required_upstream_values(provider, {**UPSTREAM_DEFAULTS.get(provider, {}), **lower_keys(raw)})
+            for raw in value
+        )
+    return True
+
+
 def merge_missing(target: dict[str, Any], source: dict[str, Any]) -> None:
     for key, value in lower_keys(source).items():
+        if not config_value_is_effective(key, value):
+            continue
         target.setdefault(key, value)
 
 
@@ -190,11 +234,15 @@ def env_presence() -> dict[str, bool]:
 
 def load_file_config() -> dict[str, Any]:
     merged: dict[str, Any] = {}
-    for path in skill_config_candidates():
+    for path in user_config_candidates():
         if not path.exists():
             continue
         merge_missing(merged, read_config_file(path))
     merge_missing(merged, env_config_values())
+    for path in skill_config_candidates():
+        if not path.exists():
+            continue
+        merge_missing(merged, read_config_file(path))
     for path in fallback_config_candidates():
         if not path.exists():
             continue
@@ -992,9 +1040,12 @@ def command_map(args: argparse.Namespace, cfg: Config) -> None:
 
 def command_doctor(args: argparse.Namespace, cfg: Config) -> None:
     del args
+    cache_dir = cfg.cache_dir
     checks: dict[str, Any] = {
         "config_file_checked": [str(path) for path in config_file_candidates()],
-        "cache_dir": str(cfg.cache_dir),
+        "config_files": config_file_statuses(),
+        "cache_dir": str(cache_dir),
+        "cache_dir_exists": cache_dir.exists(),
         "grok_search_upstreams": complete_upstream_count(cfg, "grok_search"),
         "tavily_upstreams": complete_upstream_count(cfg, "tavily"),
         "firecrawl_upstreams": complete_upstream_count(cfg, "firecrawl"),

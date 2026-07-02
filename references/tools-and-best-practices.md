@@ -73,7 +73,7 @@ python scripts/groksearch.py doctor
 ```
 
 Use on first setup or after a failed call. The output is redacted; still do not paste secrets into follow-up messages.
-For the AI provider, `doctor` reports the normalized `api_url` used to build `/v1/chat/completions`, not a full request endpoint. Environment variables are shown as present/absent only.
+For the AI provider, `doctor` reports the normalized `api_url` used to build `/v1/chat/completions`, not a full request endpoint. Config paths include `exists` flags, cache directory existence is shown, and environment variables are shown as present/absent only.
 
 ## Quality Rules
 

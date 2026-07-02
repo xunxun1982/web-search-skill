@@ -9,7 +9,7 @@ description: Use when Codex needs live web research, URL fetching, source review
 
 Run the bundled script directly. Do not route through a preconfigured external tool server, and do not require any previously registered service.
 
-Prefer runtime behavior from `config.toml` or the documented fallback config files. Do not add optional CLI parameters that duplicate configuration values unless the user explicitly asks for a one-off override; explicit CLI parameters override the merged config for that command and may accidentally change the user's intended setup.
+Prefer runtime behavior from the documented user config files or `config.toml`. Do not add optional CLI parameters that duplicate configuration values unless the user explicitly asks for a one-off override; explicit CLI parameters override the merged config for that command and may accidentally change the user's intended setup.
 
 Use:
 
@@ -47,9 +47,11 @@ Read `references/tools-and-best-practices.md` for command options and output han
 ## Configuration Notes
 
 - Prefer persistent configuration over command-line overrides. Agents should normally pass only task-specific inputs such as `--query`, `--url`, `--session-id`, `--offset`, and `--limit`.
+- Standard user config files have priority over environment variables and skill-local `config.toml`.
 - Optional tuning flags such as retry counts, source limits, response budgets, timeouts, provider endpoints, cache paths, and similar runtime settings should live in config files. Pass them on the command line only when the user explicitly requests that override.
 - Multiple upstreams are configured in `config.toml` arrays such as `GROK_SEARCH_UPSTREAMS = [{ ... }]`; environment variables only support legacy single-upstream scalar values.
 - `GROK_SEARCH_*` upstreams use OpenAI-compatible `/v1/chat/completions`; `doctor` reports the normalized AI `api_url` and redacted environment-variable presence.
+- `doctor` reports `config_files` with path priority and `exists` flags; use that before assuming configuration is missing.
 - Empty or partially filled upstream objects are ignored.
 - `GROK_SEARCH_ALLOW_INTERNAL_FETCH` defaults to `false`; set it to `true` only when `web_fetch` or `web_map` must read private/internal `http(s)` URLs. Provider endpoints may use private gateways independently.
 - Persistent local secrets should prefer the platform-appropriate user config path (`%USERPROFILE%\.config\grok-search-skill\config.toml` on Windows, `$HOME/.config/grok-search-skill/config.toml` on macOS/Linux) so skill updates do not overwrite them.

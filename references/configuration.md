@@ -2,10 +2,10 @@
 
 The bundled script merges configuration per key by priority. Earlier sources win for keys they define:
 
-1. Skill directory `config.toml`
-2. Environment variables
-3. `%USERPROFILE%\.config\grok-search-skill\config.toml`
-4. `$HOME/.config/grok-search-skill/config.toml`
+1. `%USERPROFILE%\.config\grok-search-skill\config.toml`
+2. `$HOME/.config/grok-search-skill/config.toml`
+3. Environment variables
+4. Skill directory `config.toml`
 5. TOML file pointed to by `WEB_RESEARCH_CONFIG`
 
 Notes:
@@ -17,9 +17,9 @@ Notes:
 
 ## Config File
 
-Skill-local files are preferred so a copied skill can carry its own local runtime configuration. Copy `config.example.toml` to `config.toml`, then fill only the keys you need. Keep real key files untracked.
+User config files are preferred so settings and secrets survive skill updates. Copy `config.example.toml` to the platform user config path or skill-local `config.toml`, then fill only the keys you need. Keep real key files untracked.
 
-Fallback locations:
+User and fallback locations:
 
 - Windows: `%USERPROFILE%\.config\grok-search-skill\config.toml`
 - macOS / Linux: `$HOME/.config/grok-search-skill/config.toml`
@@ -87,5 +87,5 @@ Environment variables are intentionally limited to scalar values. They cannot de
 ## Safety
 
 - Keep real secrets outside the repository.
-- `doctor` redacts configuration and reports config paths checked, environment variable presence, normalized AI `api_url`, provider endpoints, and upstream counts.
+- `doctor` redacts configuration and reports config paths checked, each config path's `exists` flag, cache directory existence, environment variable presence, normalized AI `api_url`, provider endpoints, and upstream counts.
 - Do not paste complete local config or shell environment into chat output.
