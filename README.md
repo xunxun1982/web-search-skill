@@ -47,7 +47,7 @@ Search sessions are cached under the system temp directory by default. Set `SEAR
 $env:FIRECRAWL_API_KEY = ""
 $env:FIRECRAWL_API_URL = "https://api.firecrawl.dev"
 $env:GROK_SEARCH_API_KEY = ""
-$env:GROK_SEARCH_MODEL = "grok-4.20-fast"
+$env:GROK_SEARCH_MODEL = "grok-4.3"
 $env:GROK_SEARCH_URL = "https://api.x.ai"
 $env:TAVILY_API_KEY = ""
 $env:TAVILY_API_URL = "https://api.tavily.com"
@@ -64,7 +64,7 @@ FIRECRAWL_UPSTREAMS = [
 ]
 
 GROK_SEARCH_UPSTREAMS = [
-  { GROK_SEARCH_API_KEY = "sk-123456", GROK_SEARCH_MODEL = "grok-4.20-fast", GROK_SEARCH_URL = "https://api.x.ai" },
+  { GROK_SEARCH_API_KEY = "sk-123456", GROK_SEARCH_MODEL = "grok-4.3", GROK_SEARCH_URL = "https://api.x.ai" },
   { GROK_SEARCH_API_KEY = "", GROK_SEARCH_MODEL = "", GROK_SEARCH_URL = "" },
 ]
 

@@ -36,7 +36,7 @@ FIRECRAWL_UPSTREAMS = [
 ]
 
 GROK_SEARCH_UPSTREAMS = [
-  { GROK_SEARCH_API_KEY = "sk-123456", GROK_SEARCH_MODEL = "grok-4.20-fast", GROK_SEARCH_URL = "https://api.x.ai" },
+  { GROK_SEARCH_API_KEY = "sk-123456", GROK_SEARCH_MODEL = "grok-4.3", GROK_SEARCH_URL = "https://api.x.ai" },
   { GROK_SEARCH_API_KEY = "", GROK_SEARCH_MODEL = "", GROK_SEARCH_URL = "" },
 ]
 
@@ -63,7 +63,7 @@ Environment variables are intentionally limited to scalar values. They cannot de
 |---|---|
 | `GROK_SEARCH_API_KEY` | Legacy single Grok-compatible upstream key. Used only when `GROK_SEARCH_UPSTREAMS` is not configured by an earlier file source. |
 | `GROK_SEARCH_URL` | Legacy single Grok-compatible upstream URL. Default: `https://api.x.ai`. |
-| `GROK_SEARCH_MODEL` | Legacy single Grok-compatible upstream model. Default: `grok-4.20-fast`. |
+| `GROK_SEARCH_MODEL` | Legacy single Grok-compatible upstream model. Default: `grok-4.3`. |
 | `TAVILY_API_KEY` | Legacy single Tavily upstream key. Used only when `TAVILY_UPSTREAMS` is not configured by an earlier file source. |
 | `TAVILY_API_URL` | Legacy single Tavily upstream URL. Default: `https://api.tavily.com`. |
 | `FIRECRAWL_API_KEY` | Legacy single Firecrawl upstream key. Used only when `FIRECRAWL_UPSTREAMS` is not configured by an earlier file source. |

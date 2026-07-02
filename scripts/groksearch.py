@@ -51,7 +51,7 @@ SUPPORTED_ENV_NAMES = [
 UPSTREAM_DEFAULTS = {
     "grok_search": {
         "grok_search_url": "https://api.x.ai",
-        "grok_search_model": "grok-4.20-fast",
+        "grok_search_model": "grok-4.3",
     },
     "tavily": {
         "tavily_api_url": "https://api.tavily.com",
@@ -196,11 +196,20 @@ def config_file_statuses() -> list[dict[str, Any]]:
     ]
 
 
+class ConfigError(RuntimeError):
+    pass
+
+
 def read_config_file(path: Path) -> dict[str, Any]:
-    text = path.read_text(encoding="utf-8")
     if tomllib is None:  # pragma: no cover - Python < 3.11 only
-        raise RuntimeError("Python 3.11+ is required to parse TOML configuration")
-    return tomllib.loads(text)
+        raise ConfigError("Python 3.11+ is required to parse TOML configuration")
+    try:
+        text = path.read_text(encoding="utf-8")
+        return tomllib.loads(text)
+    except OSError as exc:
+        raise ConfigError(f"failed to read config file {path}: {exc}") from exc
+    except tomllib.TOMLDecodeError as exc:
+        raise ConfigError(f"failed to parse config file {path}: {exc}") from exc
 
 
 def config_value_is_effective(key: str, value: Any) -> bool:
@@ -389,7 +398,48 @@ def resolve_host(host: str, port: int | None, timeout: float) -> list[Any]:
     return value
 
 
-def validate_web_url(url: str, *, allow_internal: bool = False, timeout: float = 60) -> None:
+def parsed_url_port(parsed: urllib.parse.ParseResult) -> int:
+    if parsed.port is not None:
+        return parsed.port
+    return 443 if parsed.scheme == "https" else 80
+
+
+def normalized_dns_host(host: str) -> str:
+    return host.strip("[]").rstrip(".").lower()
+
+
+def pin_url_dns(url: str, resolved: list[Any], pins: dict[tuple[str, int], list[Any]]) -> None:
+    parsed = urllib.parse.urlparse(url)
+    if parsed.hostname:
+        pins[(normalized_dns_host(parsed.hostname), parsed_url_port(parsed))] = resolved
+
+
+_DNS_PIN_LOCK = threading.Lock()
+
+
+class PinnedDNS:
+    def __init__(self, pins: dict[tuple[str, int], list[Any]]):
+        self.pins = pins
+        self.original_getaddrinfo = socket.getaddrinfo
+
+    def __enter__(self) -> None:
+        def getaddrinfo(host, port, *args, **kwargs):
+            try:
+                key = (normalized_dns_host(str(host)), int(port))
+            except (TypeError, ValueError):
+                key = ("", -1)
+            if key in self.pins:
+                return self.pins[key]
+            return self.original_getaddrinfo(host, port, *args, **kwargs)
+
+        # urllib resolves hostnames inside urlopen; pin vetted answers for this request.
+        socket.getaddrinfo = getaddrinfo
+
+    def __exit__(self, *_args) -> None:
+        socket.getaddrinfo = self.original_getaddrinfo
+
+
+def validate_web_url(url: str, *, allow_internal: bool = False, timeout: float = 60) -> list[Any]:
     parsed = urllib.parse.urlparse(url)
     if parsed.scheme not in {"http", "https"} or not parsed.hostname:
         raise HttpError(400, "URL must use http or https")
@@ -408,19 +458,23 @@ def validate_web_url(url: str, *, allow_internal: bool = False, timeout: float =
             raise HttpError(400, "internal URL targets are not allowed")
 
     # Internal targets skip only address rejection; DNS still stays timeout-bound.
-    resolved = resolve_host(host, port, timeout)
+    resolved = resolve_host(host, parsed_url_port(parsed), timeout)
     if not allow_internal:
         for *_, sockaddr in resolved:
             if sockaddr and is_internal_address(str(sockaddr[0])):
                 raise HttpError(400, "internal URL targets are not allowed")
+    return resolved
 
 
 class PublicRedirectHandler(urllib.request.HTTPRedirectHandler):
-    def __init__(self, timeout: float = 60):
+    def __init__(self, timeout: float = 60, *, allow_internal: bool = False, dns_pins: dict[tuple[str, int], list[Any]] | None = None):
         self.timeout = timeout
+        self.allow_internal = allow_internal
+        self.dns_pins = dns_pins if dns_pins is not None else {}
 
     def redirect_request(self, req, fp, code, msg, headers, newurl):  # noqa: D102
-        validate_web_url(newurl, timeout=self.timeout)
+        resolved = validate_web_url(newurl, allow_internal=self.allow_internal, timeout=self.timeout)
+        pin_url_dns(newurl, resolved, self.dns_pins)
         return super().redirect_request(req, fp, code, msg, headers, newurl)
 
 
@@ -433,7 +487,9 @@ def request_text(
     timeout: int = 60,
     allow_internal: bool = False,
 ) -> str:
-    validate_web_url(url, allow_internal=allow_internal, timeout=timeout)
+    dns_pins: dict[tuple[str, int], list[Any]] = {}
+    resolved = validate_web_url(url, allow_internal=allow_internal, timeout=timeout)
+    pin_url_dns(url, resolved, dns_pins)
     body = json.dumps(payload).encode("utf-8") if payload is not None else None
     request_headers = {
         "User-Agent": USER_AGENT,
@@ -444,10 +500,12 @@ def request_text(
         request_headers.setdefault("Content-Type", "application/json")
     req = urllib.request.Request(url, data=body, headers=request_headers, method=method)
     try:
-        opener = urllib.request if allow_internal else urllib.request.build_opener(PublicRedirectHandler(timeout))
-        with opener.urlopen(req, timeout=timeout) as resp:
-            charset = resp.headers.get_content_charset() or "utf-8"
-            return resp.read().decode(charset, errors="replace")
+        opener = urllib.request.build_opener(PublicRedirectHandler(timeout, allow_internal=allow_internal, dns_pins=dns_pins))
+        with _DNS_PIN_LOCK:
+            with PinnedDNS(dns_pins):
+                with opener.open(req, timeout=timeout) as resp:
+                    charset = resp.headers.get_content_charset() or "utf-8"
+                    return resp.read().decode(charset, errors="replace")
     except urllib.error.HTTPError as exc:
         error_text = exc.read().decode("utf-8", errors="replace")
         raise HttpError(exc.code, error_text[:2000]) from exc
@@ -552,7 +610,7 @@ def ai_search(cfg: Config, query: str) -> dict[str, Any] | None:
     if not key:
         return None
     base = upstream.get("grok_search_url", "https://api.x.ai")
-    model = upstream.get("grok_search_model", "grok-4.20-fast")
+    model = upstream.get("grok_search_model", UPSTREAM_DEFAULTS["grok_search"]["grok_search_model"])
     use_web_tool = cfg.get_bool("GROK_SEARCH_WEB_SEARCH", True)
 
     endpoint = normalize_v1_base(base) + "/chat/completions"
@@ -1118,11 +1176,14 @@ def build_parser() -> argparse.ArgumentParser:
 
 def main(argv: list[str] | None = None) -> int:
     configure_stdio()
-    cfg = Config(lower_keys(load_file_config()))
     parser = build_parser()
     args = parser.parse_args(argv)
     try:
+        cfg = Config(lower_keys(load_file_config()))
         args.func(args, cfg)
+    except ConfigError as exc:
+        eprint(f"Config error: {exc}")
+        return 2
     except HttpError as exc:
         eprint(f"HTTP {exc.status}: {exc}")
         return 2
