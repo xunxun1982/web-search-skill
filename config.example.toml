@@ -1,4 +1,4 @@
-# Copy this file to config.toml in the same directory and fill only the keys you need.
+# Copy this file to the user config path or skill-local config.toml, then fill only the keys you need.
 # Do not commit config.toml with real keys.
 # Add more objects as needed. Only objects with all fields filled are used.
 
@@ -17,8 +17,8 @@ TAVILY_UPSTREAMS = [
   { TAVILY_API_KEY = "", TAVILY_API_URL = "" },
 ]
 
-# Optional. Raises GitHub issue/PR API limits and supports private repositories.
-GITHUB_TOKEN = ""
+# Optional non-empty scalar. Raises GitHub issue/PR API limits and supports private repositories.
+# GITHUB_TOKEN = "ghp_..."
 
 GROK_SEARCH_TIMEOUT_SECONDS = 120
 GROK_SEARCH_MAX_RETRIES = 5

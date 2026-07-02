@@ -32,9 +32,10 @@ Important details:
 - Environment variables are still useful for legacy single-upstream keys (`GROK_SEARCH_API_KEY`, `GROK_SEARCH_URL`, `GROK_SEARCH_MODEL`, `TAVILY_API_KEY`, `TAVILY_API_URL`, `FIRECRAWL_API_KEY`, `FIRECRAWL_API_URL`) and scalar settings such as `GITHUB_TOKEN`, `GROK_SEARCH_TIMEOUT_SECONDS`, `GROK_SEARCH_MAX_RETRIES`, `SEARCH_CACHE_DIR`, `GROK_SEARCH_FETCH_MAX_CHARS`, `GROK_SEARCH_ALLOW_INTERNAL_FETCH`, and `GROK_SEARCH_RESPONSE_MAX_CHARS`.
 - `GROK_SEARCH_MAX_RETRIES` controls additional Grok `web_search` retries after the first failed attempt. Any Grok error triggers retry; after retries are exhausted, Tavily is used as fallback when configured.
 - `web_search --grok-max-retries` is a per-call override. If omitted, the merged config value is used.
-- `WEB_RESEARCH_CONFIG` is a fallback config path in the current implementation. It does not override standard user config files, environment variables, or skill-local config.
+- `WEB_RESEARCH_CONFIG` is a fallback config path in the current implementation. It does not override standard user config files, environment variables, or skill-local config, and non-`.toml` paths are ignored.
 - The recommended place for persistent local secrets is the platform-appropriate user config path (`%USERPROFILE%\.config\grok-search-skill\config.toml` on Windows, `$HOME/.config/grok-search-skill/config.toml` on macOS/Linux); this survives skill updates better than a skill-local `config.toml`.
 - `GROK_SEARCH_*` upstreams are called through OpenAI-compatible `/v1/chat/completions`. `doctor` reports the normalized AI `api_url`, not a full request endpoint.
+- Empty scalar values are treated as missing; leave optional scalar settings commented out when unused.
 - `doctor` also reports `config_files` with each config path's priority, source, and existence flag.
 - `GROK_SEARCH_ALLOW_INTERNAL_FETCH = true` allows `web_fetch` and `web_map` to target private/internal `http(s)` URLs. Default is `false`; configured provider endpoints can use private gateways regardless of this setting.
 
@@ -72,16 +73,17 @@ TAVILY_UPSTREAMS = [
   { TAVILY_API_KEY = "", TAVILY_API_URL = "" },
 ]
 
-GITHUB_TOKEN = ""
 GROK_SEARCH_MAX_RETRIES = 5
 GROK_SEARCH_ALLOW_INTERNAL_FETCH = false
+
+# GITHUB_TOKEN = "ghp_..."
 ```
 
 User and fallback config file locations:
 
 - `%USERPROFILE%\.config\grok-search-skill\config.toml`
 - `$HOME/.config/grok-search-skill/config.toml`
-- TOML path from `WEB_RESEARCH_CONFIG`
+- TOML path from `WEB_RESEARCH_CONFIG` (must end with `.toml`)
 
 ## Usage
 

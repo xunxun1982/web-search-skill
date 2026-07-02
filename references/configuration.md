@@ -12,8 +12,8 @@ Notes:
 
 - If two sources define the same key, the earlier source keeps its value and later sources are ignored for that key.
 - Environment variables cannot express the `*_UPSTREAMS` arrays. Use `config.toml` for multiple upstream objects.
-- Environment variables can still provide legacy single-upstream keys and scalar settings.
-- `WEB_RESEARCH_CONFIG` is currently a lowest-priority fallback path, not a high-priority override.
+- Environment variables can still provide legacy single-upstream keys and scalar settings. Empty scalar values are treated as missing.
+- `WEB_RESEARCH_CONFIG` is currently a lowest-priority fallback path, not a high-priority override. Its path must end with `.toml` or it is ignored.
 
 ## Config File
 
@@ -23,7 +23,7 @@ User and fallback locations:
 
 - Windows: `%USERPROFILE%\.config\grok-search-skill\config.toml`
 - macOS / Linux: `$HOME/.config/grok-search-skill/config.toml`
-- Extra fallback TOML path: `WEB_RESEARCH_CONFIG`
+- Extra fallback TOML path: `WEB_RESEARCH_CONFIG` (must end with `.toml`)
 
 TOML example:
 
@@ -45,12 +45,14 @@ TAVILY_UPSTREAMS = [
   { TAVILY_API_KEY = "", TAVILY_API_URL = "" },
 ]
 
-GITHUB_TOKEN = ""
 GROK_SEARCH_TIMEOUT_SECONDS = 120
 GROK_SEARCH_MAX_RETRIES = 5
 GROK_SEARCH_FETCH_MAX_CHARS = 0
 GROK_SEARCH_ALLOW_INTERNAL_FETCH = false
 GROK_SEARCH_RESPONSE_MAX_CHARS = 60000
+
+# Optional non-empty scalar. Leave commented out when unused.
+# GITHUB_TOKEN = "ghp_..."
 ```
 
 ## Environment Variables
