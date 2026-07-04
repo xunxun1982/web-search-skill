@@ -251,15 +251,15 @@ def read_config_file(path: Path) -> dict[str, Any]:
 
 def normalize_utf8_bom_config(path: Path, raw: bytes) -> bytes:
     normalized = raw[len(UTF8_BOM) :]
-    temp_path = path.with_name(f".{path.name}.{os.getpid()}.{uuid.uuid4().hex}.tmp")
     try:
-        temp_path.write_bytes(normalized)
-        os.replace(temp_path, path)
-    finally:
-        try:
-            temp_path.unlink()
-        except FileNotFoundError:
-            pass
+        with path.open("r+b") as config_file:
+            # Rewrite in place so existing ACLs, owner, group, and DACL stay attached.
+            config_file.write(normalized)
+            config_file.truncate()
+            config_file.flush()
+            os.fsync(config_file.fileno())
+    except OSError as exc:
+        raise ConfigError(f"failed to normalize UTF-8 BOM in config file {path}: {exc}") from exc
     return normalized
 
 

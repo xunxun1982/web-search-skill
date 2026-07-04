@@ -17,3 +17,5 @@
 !scripts/
 # scripts/groksearch.py is intentionally ignored; the legacy entry point is not preserved after the rename.
 !scripts/websearch.py
+!tests/
+!tests/test_websearch_config.py
