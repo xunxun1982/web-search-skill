@@ -15,4 +15,5 @@
 !references/configuration.md
 !references/tools-and-best-practices.md
 !scripts/
+# scripts/groksearch.py is intentionally ignored; the legacy entry point is not preserved after the rename.
 !scripts/websearch.py

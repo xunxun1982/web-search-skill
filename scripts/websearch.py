@@ -327,6 +327,7 @@ def random_upstream(cfg: "Config", provider: str) -> dict[str, str] | None:
             if not isinstance(raw, dict):
                 continue
             raw_item = lower_keys(raw)
+            # Array entries must be complete before defaults are merged; defaults only support scalar fallback config.
             if has_required_upstream_values(provider, raw_item):
                 item = {**defaults, **raw_item}
                 upstreams.append({str(k): str(v) for k, v in item.items()})

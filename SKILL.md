@@ -1,15 +1,13 @@
 ---
 name: web-search-skill
-description: Use when Codex needs live web research, URL fetching, source review, site URL discovery, or connectivity diagnosis by running the bundled direct HTTP research script.
+description: Use when the user asks for web search, internet search, 联网搜索, current/latest information, reading or verifying a URL, online document, API docs, 网络文档, prior web_search sources, site URL discovery, or web-search-skill configuration/connectivity diagnosis.
 ---
 
 # Web Search Skill
 
 ## Core Rule
 
-Run the bundled script directly. Do not route through a preconfigured external tool server, and do not require any previously registered service.
-
-Prefer runtime behavior from the documented user config files or `config.toml`. Do not add optional CLI parameters that duplicate configuration values unless the user explicitly asks for a one-off override; explicit CLI parameters override the merged config for that command and may accidentally change the user's intended setup.
+Run the bundled script directly. Do not route through a preconfigured external tool server or require a registered service.
 
 Use:
 
@@ -21,20 +19,18 @@ python scripts/websearch.py <command> [options]
 
 | Need | Command |
 |---|---|
-| Discover current information without a known URL | `web_search` |
-| Read a known URL | `web_fetch` |
+| Discover current information or a named online document without a known URL | `web_search` |
+| Read a known URL or online document | `web_fetch` |
 | Review cached sources from a prior search | `get_sources` |
 | Discover URLs under a site | `web_map` |
 | Check configuration and upstream reachability | `doctor` |
 
-These command names are the stable Web Search Skill CLI interface: `web_search`, `get_sources`, `web_fetch`, `web_map`, and `doctor`.
-
-Read `references/tools-and-best-practices.md` for command options and output handling. Read `references/configuration.md` before configuring keys, endpoints, cache paths, or provider behavior.
+`web_search`, `get_sources`, `web_fetch`, `web_map`, and `doctor` are the stable CLI interface.
 
 ## Operating Rules
 
-- Run `doctor` first when configuration, connectivity, upstream selection, or credentials are uncertain. Report only redacted diagnostics.
 - Use `web_search` for discovery when no exact URL is known. Save its `session_id`.
+- When the user names an online document but gives no URL, use `web_search` to locate the official or primary URL, then use `web_fetch` on that URL.
 - Use `get_sources` to review or paginate sources from a prior `web_search` instead of repeating the same search.
 - Use `web_fetch` for exact URLs, quotes, page evidence, GitHub issues/PRs, StackExchange questions, arXiv abstracts, Wikipedia pages, and ordinary web pages.
 - Use `web_map` only for site URL discovery. If the URL is already known, use `web_fetch`.
@@ -44,26 +40,19 @@ Read `references/tools-and-best-practices.md` for command options and output han
 - Never print API keys, tokens, `.env` contents, or unrelated sensitive data.
 - Return concise conclusions with source URLs and uncertainty when sources conflict.
 
-## Configuration Notes
+## Reference Pointers
 
-- Prefer persistent configuration over command-line overrides. Agents should normally pass only task-specific inputs such as `--query`, `--url`, `--session-id`, `--offset`, and `--limit`.
-- Standard user config files have priority over environment variables and skill-local `config.toml`. The first source with any effective value wins as a whole; do not assume environment variables supplement a higher-priority config file.
-- Optional tuning flags such as retry counts, source limits, response budgets, timeouts, provider endpoints, cache paths, and similar runtime settings should live in config files. Pass them on the command line only when the user explicitly requests that override.
-- Multiple Grok/OpenAI-compatible upstreams are configured in `config.toml` arrays such as `GROK_SEARCH_UPSTREAMS = [{ ... }]`; environment variables only support single-upstream scalar values.
-- Exa fallback uses the official remote MCP endpoint free plan without local key config.
-- Provider priority is configurable per command with `SEARCH_PROVIDER_PRIORITY`, `FETCH_PROVIDER_PRIORITY`, and `MAP_PROVIDER_PRIORITY`; supported values are `grok,tavily,exa` for search, `tavily,firecrawl,exa,plain` for fetch, and `tavily,exa` for map. Providers omitted from a configured priority list are disabled, and an empty or all-invalid list disables every provider for that command.
-- Empty scalar values are treated as missing; optional scalar examples should stay commented out until configured.
-- `GROK_SEARCH_*` upstreams use OpenAI-compatible `/v1/chat/completions`; `doctor` reports the normalized AI `api_url` and redacted environment-variable presence.
-- `doctor` reports `active_config_source`, `config_files` with path priority and `exists` flags, plus provider priority and enabled state; use that before assuming configuration is missing or enabled.
-- Empty or partially filled upstream objects are ignored.
-- `GROK_SEARCH_ALLOW_INTERNAL_FETCH` defaults to `false`; set it to `true` only when `web_fetch` or `web_map` must read private/internal `http(s)` URLs. Provider endpoints may use private gateways independently. Generic internal `web_fetch` still requires `plain` in `FETCH_PROVIDER_PRIORITY`.
-- Persistent local secrets should prefer the platform-appropriate user config path (`%USERPROFILE%\.config\web-search-skill\config.toml` on Windows, `$HOME/.config/web-search-skill/config.toml` on macOS/Linux) so skill updates do not overwrite them.
-- `WEB_RESEARCH_CONFIG` is a lowest-priority fallback config path in this skill, not an override; non-`.toml` paths are ignored.
+- Read `references/tools-and-best-practices.md` for command options, output handling, provider fallback, and safety rules.
+- Read `references/configuration.md` before configuring keys, endpoints, provider priority, cache paths, retry counts, timeouts, response budgets, or internal fetch behavior.
+- Run `doctor` first when configuration, connectivity, upstream selection, provider enablement, or credentials are uncertain. Report only redacted diagnostics.
+- Prefer config files over command-line overrides. Pass only task inputs such as `--query`, `--url`, `--session-id`, `--offset`, and `--limit` unless the user asks for a one-off override.
+- Configuration sources are not merged. The first source with any effective value wins as a whole; confirm with `doctor` before assuming environment variables supplement a config file.
 
 ## Success Criteria
 
 - The answer is based on live sources or fetched page content.
 - Important claims have source URLs.
+- Named online documents are resolved to official or primary URLs before quoting.
 - Large source sets are recovered via `get_sources` or targeted `web_fetch`, not repeated broad searches.
 - Configuration failures are reported with redacted diagnostics only.
 - Commands used in instructions and reports use the documented Web Search Skill command names.
