@@ -49,7 +49,7 @@ SUPPORTED_ENV_NAMES = [
 ]
 APP_DIR_NAME = "web-search-skill"
 EXA_MCP_URL = "https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa,web_search_advanced_exa"
-MCP_PROTOCOL_VERSION = "2025-06-18"
+MCP_PROTOCOL_VERSION = "2025-11-25"
 DEFAULT_SEARCH_PROVIDER_PRIORITY = ["grok", "tavily", "exa"]
 DEFAULT_FETCH_PROVIDER_PRIORITY = ["tavily", "firecrawl", "exa", "plain"]
 DEFAULT_MAP_PROVIDER_PRIORITY = ["tavily", "exa"]
@@ -108,6 +108,12 @@ def strip_html(value: str) -> str:
     value = re.sub(r"(?s)<[^>]+>", " ", value)
     value = html.unescape(value)
     return re.sub(r"\s+", " ", value).strip()
+
+
+def non_blank_text(value: Any) -> str | None:
+    if not isinstance(value, str):
+        return None
+    return value if value.strip() else None
 
 
 def normalize_base(url: str, suffix: str) -> str:
@@ -1028,6 +1034,8 @@ def command_search(args: argparse.Namespace, cfg: Config) -> None:
                 except Exception as exc:  # noqa: BLE001
                     error_type = "timed out" if is_timeout_error(exc) else "failed"
                     warnings.append(f"AI provider attempt {attempt + 1}/{max_retries + 1} {error_type}: {exc}")
+            else:
+                warnings.append(fallback_warning(provider, grok_status, next_provider))
             if not grok_status:
                 break
             ai_result = None
@@ -1286,7 +1294,7 @@ def tavily_extract(url: str, cfg: Config) -> str | None:
     if isinstance(results, list) and results:
         first = results[0]
         if isinstance(first, dict):
-            return first.get("raw_content") or first.get("content")
+            return non_blank_text(first.get("raw_content")) or non_blank_text(first.get("content"))
     return None
 
 
@@ -1308,11 +1316,11 @@ def firecrawl_extract(url: str, cfg: Config) -> str | None:
         allow_internal=True,
     )
     payload = data.get("data") if isinstance(data.get("data"), dict) else data
-    return payload.get("markdown") or payload.get("content")
+    return non_blank_text(payload.get("markdown")) or non_blank_text(payload.get("content"))
 
 
 def exa_extract(url: str, cfg: Config) -> str | None:
-    return exa_mcp_tool_call(EXA_MCP_URL, "web_fetch_exa", {"urls": [url]}, cfg) or None
+    return non_blank_text(exa_mcp_tool_call(EXA_MCP_URL, "web_fetch_exa", {"urls": [url]}, cfg))
 
 
 def tavily_map(url: str, cfg: Config, max_results: int) -> list[str] | None:
