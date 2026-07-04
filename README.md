@@ -14,7 +14,7 @@ Self-contained Codex skill for live web search, URL fetching, source review, sit
 
 For persistent local config, copy `config.example.toml` to the platform user config path, then fill only the keys you need. Skill-local `config.toml` is still supported and ignored by git.
 
-Configuration is merged per key in this order. Earlier sources win for keys they define:
+Configuration uses the first source in this order that contains any effective value. Sources are not merged together:
 
 1. `%USERPROFILE%\.config\web-search-skill\config.toml`
 2. `$HOME/.config/web-search-skill/config.toml`
@@ -26,20 +26,21 @@ Important details:
 
 - Python 3.11+ is required so TOML config is parsed by the standard `tomllib` parser.
 - `config.toml` is supported for standard user config and skill-local config. `WEB_RESEARCH_CONFIG` may point to any `.toml` file as a fallback source.
+- If a higher-priority config file sets provider priority but does not set upstreams, environment-variable upstreams are not mixed in. Put priority and upstream settings in the same source, or remove the higher-priority file so the next source can take effect.
 - Prefer config files for runtime settings. CLI parameters are intended for task inputs and explicit one-off overrides; when a CLI parameter maps to a config value, the CLI value wins for that call.
 - Agents should not add optional tuning flags by default, because that can silently override the user's configured behavior. Use config for retry counts, source limits, response budgets, timeouts, provider endpoints, cache paths, and similar settings unless the user explicitly asks for a different value on one command.
 - Environment variables cannot express `*_UPSTREAMS` arrays. Use `config.toml` for multiple upstreams.
-- Environment variables are useful for single-upstream keys (`GROK_SEARCH_API_KEY`, `GROK_SEARCH_URL`, `GROK_SEARCH_MODEL`, `TAVILY_API_KEY`, `TAVILY_API_URL`, `FIRECRAWL_API_KEY`, `FIRECRAWL_API_URL`) and scalar settings such as `GITHUB_TOKEN`, `GROK_SEARCH_TIMEOUT_SECONDS`, `GROK_SEARCH_MAX_RETRIES`, `SEARCH_PROVIDER_PRIORITY`, `FETCH_PROVIDER_PRIORITY`, `MAP_PROVIDER_PRIORITY`, `SEARCH_CACHE_DIR`, `GROK_SEARCH_FETCH_MAX_CHARS`, `GROK_SEARCH_ALLOW_INTERNAL_FETCH`, and `GROK_SEARCH_RESPONSE_MAX_CHARS`.
+- Environment variables are useful as their own source for single-upstream keys (`GROK_SEARCH_API_KEY`, `GROK_SEARCH_URL`, `GROK_SEARCH_MODEL`, `TAVILY_API_KEY`, `TAVILY_API_URL`, `FIRECRAWL_API_KEY`, `FIRECRAWL_API_URL`) and scalar settings such as `GITHUB_TOKEN`, `GROK_SEARCH_TIMEOUT_SECONDS`, `GROK_SEARCH_MAX_RETRIES`, `SEARCH_PROVIDER_PRIORITY`, `FETCH_PROVIDER_PRIORITY`, `MAP_PROVIDER_PRIORITY`, `SEARCH_CACHE_DIR`, `GROK_SEARCH_FETCH_MAX_CHARS`, `GROK_SEARCH_ALLOW_INTERNAL_FETCH`, and `GROK_SEARCH_RESPONSE_MAX_CHARS`.
 - Exa fallback uses the official remote MCP endpoint free plan without local Exa key config.
 - `GROK_SEARCH_MAX_RETRIES` controls additional Grok `web_search` retries after the first failed attempt. Any Grok error triggers retry; default fallback order is Tavily then Exa, and provider priorities can be adjusted per command.
-- Provider priority values are `grok,tavily,exa` for `SEARCH_PROVIDER_PRIORITY`, `tavily,firecrawl,exa,plain` for `FETCH_PROVIDER_PRIORITY`, and `tavily,exa` for `MAP_PROVIDER_PRIORITY`; omitted providers are disabled when a priority list is configured.
+- Provider priority values are `grok,tavily,exa` for `SEARCH_PROVIDER_PRIORITY`, `tavily,firecrawl,exa,plain` for `FETCH_PROVIDER_PRIORITY`, and `tavily,exa` for `MAP_PROVIDER_PRIORITY`; omitted providers are disabled when a priority list is configured, and an empty or all-invalid list disables every provider for that command.
 - `web_search --grok-max-retries` is a per-call override. If omitted, the merged config value is used.
 - `WEB_RESEARCH_CONFIG` is a fallback config path in the current implementation. It does not override standard user config files, environment variables, or skill-local config, and non-`.toml` paths are ignored.
 - The recommended place for persistent local secrets is the platform-appropriate user config path (`%USERPROFILE%\.config\web-search-skill\config.toml` on Windows, `$HOME/.config/web-search-skill/config.toml` on macOS/Linux).
 - `GROK_SEARCH_*` upstreams are called through OpenAI-compatible `/v1/chat/completions`. `doctor` reports the normalized AI `api_url`, not a full request endpoint.
 - Empty scalar values are treated as missing; leave optional scalar settings commented out when unused.
-- `doctor` also reports `config_files` with each config path's priority, source, and existence flag.
-- `GROK_SEARCH_ALLOW_INTERNAL_FETCH = true` allows `web_fetch` and `web_map` to target private/internal `http(s)` URLs. Default is `false`; configured provider endpoints can use private gateways regardless of this setting.
+- `doctor` also reports `active_config_source`, `config_files` with each config path's priority/source/existence flag, plus `provider_priority` and `provider_enabled` so configured-but-disabled providers are visible.
+- `GROK_SEARCH_ALLOW_INTERNAL_FETCH = true` allows `web_fetch` and `web_map` to target private/internal `http(s)` URLs. Default is `false`; configured provider endpoints can use private gateways regardless of this setting. Generic internal `web_fetch` still requires `plain` in `FETCH_PROVIDER_PRIORITY`.
 
 Do not commit real keys.
 

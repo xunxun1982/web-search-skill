@@ -1,6 +1,6 @@
 # Configuration
 
-The bundled script merges configuration per key by priority. Earlier sources win for keys they define:
+The bundled script uses the first source in this priority order that contains any effective value. Sources are not merged together:
 
 1. `%USERPROFILE%\.config\web-search-skill\config.toml`
 2. `$HOME/.config/web-search-skill/config.toml`
@@ -10,9 +10,10 @@ The bundled script merges configuration per key by priority. Earlier sources win
 
 Notes:
 
-- If two sources define the same key, the earlier source keeps its value and later sources are ignored for that key.
+- If a higher-priority source contains any effective value, later sources are ignored entirely.
+- If a higher-priority config file sets provider priority but omits upstreams, environment-variable upstreams are not mixed in. Put priority and upstream settings in the same source, or remove the higher-priority file so the next source can take effect.
 - Environment variables cannot express the `*_UPSTREAMS` arrays. Use `config.toml` for multiple upstream objects.
-- Environment variables can provide single-upstream scalar keys and scalar runtime settings. Empty scalar values are treated as missing.
+- Environment variables can provide single-upstream scalar keys and scalar runtime settings as their own source. Empty scalar values are treated as missing.
 - `WEB_RESEARCH_CONFIG` is currently a lowest-priority fallback path, not a high-priority override. Its path must end with `.toml` or it is ignored.
 
 ## Config File
@@ -66,7 +67,7 @@ GROK_SEARCH_RESPONSE_MAX_CHARS = 60000
 
 ## Environment Variables
 
-Environment variables are intentionally limited to scalar values. They cannot define `GROK_SEARCH_UPSTREAMS`, `TAVILY_UPSTREAMS`, or `FIRECRAWL_UPSTREAMS`. For multiple upstreams, use `config.toml`.
+Environment variables are intentionally limited to scalar values. They cannot define `GROK_SEARCH_UPSTREAMS`, `TAVILY_UPSTREAMS`, or `FIRECRAWL_UPSTREAMS`. For multiple upstreams, use `config.toml`. Environment variables are used only when no higher-priority config file contains effective settings.
 
 | Variable | Purpose |
 |---|---|
@@ -85,24 +86,24 @@ Environment variables are intentionally limited to scalar values. They cannot de
 | `MAP_PROVIDER_PRIORITY` | `web_map` provider priority. Supported values: `tavily`, `exa`. Config files may use a TOML array; environment variables may use comma-separated values. Default: `tavily,exa`. Omitted providers are disabled when this is configured. |
 | `SEARCH_CACHE_DIR` | Optional search session cache directory. Default uses the system temp directory. |
 | `GROK_SEARCH_FETCH_MAX_CHARS` | Default `fetch` character cap. |
-| `GROK_SEARCH_ALLOW_INTERNAL_FETCH` | Allows `web_fetch` and `web_map` to target private/internal `http(s)` URLs. Default: `false`. Provider endpoints are explicit config and can use private gateways independently. |
+| `GROK_SEARCH_ALLOW_INTERNAL_FETCH` | Allows `web_fetch` and `web_map` to target private/internal `http(s)` URLs. Default: `false`. Provider endpoints are explicit config and can use private gateways independently. For generic internal `web_fetch`, plain HTTP still requires `plain` to be enabled in `FETCH_PROVIDER_PRIORITY`. |
 | `GROK_SEARCH_RESPONSE_MAX_CHARS` | Default `search` response budget. |
 
 ## Provider Selection
 
 - Default provider priorities are `grok,tavily,exa` for `web_search`, `tavily,firecrawl,exa,plain` for generic `web_fetch`, and `tavily,exa` for `web_map`.
-- Priority config reorders providers and disables omitted providers, so `["exa", "tavily"]` makes Exa first and disables Grok for that command.
+- Priority config reorders providers and disables omitted providers, so `["exa", "tavily"]` makes Exa first and disables Grok for that command. An empty or all-invalid priority list disables every provider for that command.
 - With `GROK_SEARCH_UPSTREAMS`, `web_search` randomly selects one Grok/OpenAI-compatible upstream object for the AI answer and calls `/v1/chat/completions`.
 - `web_search --grok-max-retries` overrides `GROK_SEARCH_MAX_RETRIES` for that call. When the flag is omitted, the merged config value is used.
 - With `TAVILY_UPSTREAMS`, search fallback, generic fetch, and map randomly select one Tavily upstream object.
 - With `FIRECRAWL_UPSTREAMS`, generic `fetch` fallback randomly selects one Firecrawl upstream object.
 - Exa uses the official remote MCP endpoint free plan without local key config. In the default priorities, `web_search` uses Exa after Tavily fallback fails, generic `web_fetch` uses Exa after Tavily and Firecrawl fail, and `web_map` uses Exa after Tavily fails or returns no URLs.
 - Single-value `GROK_SEARCH_*`, `TAVILY_*`, and `FIRECRAWL_*` keys work as fallback when no upstream table is configured.
-- Empty or partially filled upstream objects are ignored.
+- Empty or partially filled upstream objects are ignored. Upstream array objects must explicitly provide every required field; default endpoint/model values are only used by single-value fallback config.
 - With no provider keys, specialized public fetchers still work for GitHub, StackExchange, arXiv, and Wikipedia URLs.
 
 ## Safety
 
 - Keep real secrets outside the repository.
-- `doctor` redacts configuration and reports config paths checked, each config path's `exists` flag, cache directory existence, environment variable presence, normalized AI `api_url`, provider endpoints, and upstream counts.
+- `doctor` redacts configuration and reports the active config source, config paths checked, each config path's `exists` flag, cache directory existence, environment variable presence, provider priority, provider enabled state, normalized AI `api_url`, provider endpoints, and upstream counts.
 - Do not paste complete local config or shell environment into chat output.

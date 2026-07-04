@@ -49,7 +49,7 @@ Specialized fetch paths:
 - arXiv abstract pages.
 - Wikipedia pages.
 
-When `GROK_SEARCH_ALLOW_INTERNAL_FETCH` is false, generic fetch uses the configured fetch provider priority; the default is Tavily first, Firecrawl second, Exa MCP free-plan third, then plain HTTP with HTML cleanup. If internal fetch is enabled, it skips the external-extractor chain and goes straight to plain HTTP after the specialized fetchers. Providers omitted from `FETCH_PROVIDER_PRIORITY` are disabled.
+When `GROK_SEARCH_ALLOW_INTERNAL_FETCH` is false, generic fetch uses the configured fetch provider priority; the default is Tavily first, Firecrawl second, Exa MCP free-plan third, then plain HTTP with HTML cleanup. If internal fetch is enabled, it skips the external-extractor chain after the specialized fetchers and uses plain HTTP only when `plain` is enabled in `FETCH_PROVIDER_PRIORITY`. Providers omitted from `FETCH_PROVIDER_PRIORITY` are disabled.
 
 ## `get_sources`
 

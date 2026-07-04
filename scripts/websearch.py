@@ -53,6 +53,7 @@ MCP_PROTOCOL_VERSION = "2025-06-18"
 DEFAULT_SEARCH_PROVIDER_PRIORITY = ["grok", "tavily", "exa"]
 DEFAULT_FETCH_PROVIDER_PRIORITY = ["tavily", "firecrawl", "exa", "plain"]
 DEFAULT_MAP_PROVIDER_PRIORITY = ["tavily", "exa"]
+CONFIG_SOURCE_META_KEY = "__config_source"
 PROVIDER_ALIASES = {
     "ai": "grok",
     "search": "grok",
@@ -240,7 +241,7 @@ def config_value_is_effective(key: str, value: Any) -> bool:
         provider = key[: -len("_upstreams")]
         return any(
             isinstance(raw, dict)
-            and has_required_upstream_values(provider, {**UPSTREAM_DEFAULTS.get(provider, {}), **lower_keys(raw)})
+            and has_required_upstream_values(provider, lower_keys(raw))
             for raw in value
         )
     return True
@@ -253,6 +254,10 @@ def merge_missing(target: dict[str, Any], source: dict[str, Any]) -> None:
         target.setdefault(key, value)
 
 
+def effective_config_values(source: dict[str, Any]) -> dict[str, Any]:
+    return {key: value for key, value in lower_keys(source).items() if config_value_is_effective(key, value)}
+
+
 def env_config_values() -> dict[str, str]:
     return {name.lower(): os.environ[name] for name in SUPPORTED_ENV_NAMES if name in os.environ}
 
@@ -262,22 +267,36 @@ def env_presence() -> dict[str, bool]:
     return {name: name in os.environ for name in names}
 
 
-def load_file_config() -> dict[str, Any]:
-    merged: dict[str, Any] = {}
+def load_file_config_with_source() -> tuple[dict[str, Any], dict[str, str]]:
     for path in user_config_candidates():
         if not path.exists():
             continue
-        merge_missing(merged, read_config_file(path))
-    merge_missing(merged, env_config_values())
+        values = effective_config_values(read_config_file(path))
+        if values:
+            return values, {"source": "user", "path": str(path)}
+    values = effective_config_values(env_config_values())
+    if values:
+        return values, {"source": "environment", "path": ""}
     for path in skill_config_candidates():
         if not path.exists():
             continue
-        merge_missing(merged, read_config_file(path))
+        values = effective_config_values(read_config_file(path))
+        if values:
+            return values, {"source": "skill-local", "path": str(path)}
     for path in fallback_config_candidates():
         if not path.exists():
             continue
-        merge_missing(merged, read_config_file(path))
-    return merged
+        values = effective_config_values(read_config_file(path))
+        if values:
+            return values, {"source": "fallback", "path": str(path)}
+    return {}, {"source": "defaults", "path": ""}
+
+
+def load_file_config() -> dict[str, Any]:
+    values, source = load_file_config_with_source()
+    if source["source"] != "defaults":
+        values[CONFIG_SOURCE_META_KEY] = source
+    return values
 
 
 def lower_keys(data: dict[str, Any]) -> dict[str, Any]:
@@ -301,8 +320,9 @@ def random_upstream(cfg: "Config", provider: str) -> dict[str, str] | None:
         for raw in raw_upstreams:
             if not isinstance(raw, dict):
                 continue
-            item = {**defaults, **lower_keys(raw)}
-            if has_required_upstream_values(provider, item):
+            raw_item = lower_keys(raw)
+            if has_required_upstream_values(provider, raw_item):
+                item = {**defaults, **raw_item}
                 upstreams.append({str(k): str(v) for k, v in item.items()})
 
     if upstreams:
@@ -326,8 +346,7 @@ def complete_upstream_count(cfg: "Config", provider: str) -> int:
         return sum(
             1
             for raw in raw_upstreams
-            if isinstance(raw, dict)
-            and has_required_upstream_values(provider, {**UPSTREAM_DEFAULTS.get(provider, {}), **lower_keys(raw)})
+            if isinstance(raw, dict) and has_required_upstream_values(provider, lower_keys(raw))
         )
     return int(random_upstream(cfg, provider) is not None)
 
@@ -567,7 +586,7 @@ def first_jsonrpc_message(text: str, request_id: int) -> dict[str, Any]:
 
 
 def exa_mcp_post(endpoint: str, payload: dict[str, Any], cfg: Config, session_id: str = "") -> tuple[str, str]:
-    validate_web_url(endpoint, allow_internal=True, timeout=cfg.timeout)
+    validate_web_url(endpoint, allow_internal=False, timeout=cfg.timeout)
     headers = {
         "User-Agent": USER_AGENT,
         "Accept": "application/json, text/event-stream",
@@ -578,7 +597,7 @@ def exa_mcp_post(endpoint: str, payload: dict[str, Any], cfg: Config, session_id
         headers["Mcp-Session-Id"] = session_id
     req = urllib.request.Request(endpoint, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
     try:
-        opener = urllib.request.build_opener(PublicRedirectHandler(cfg.timeout, allow_internal=True))
+        opener = urllib.request.build_opener(PublicRedirectHandler(cfg.timeout, allow_internal=False))
         with opener.open(req, timeout=cfg.timeout) as resp:
             return resp.headers.get("Mcp-Session-Id") or "", resp.read().decode("utf-8", errors="replace")
     except urllib.error.HTTPError as exc:
@@ -1375,6 +1394,7 @@ def command_fetch(args: argparse.Namespace, cfg: Config) -> None:
     source_type = "generic"
     content: str | None = None
     use_external_extract = not cfg.allow_internal_fetch
+    fetch_priority = provider_priority(cfg, "FETCH_PROVIDER_PRIORITY", DEFAULT_FETCH_PROVIDER_PRIORITY)
 
     for name, fetcher in [
         ("github", github_fetch),
@@ -1392,7 +1412,6 @@ def command_fetch(args: argparse.Namespace, cfg: Config) -> None:
 
     if content is None and use_external_extract:
         fetchers = {"tavily": tavily_extract, "firecrawl": firecrawl_extract, "exa": exa_extract}
-        fetch_priority = provider_priority(cfg, "FETCH_PROVIDER_PRIORITY", DEFAULT_FETCH_PROVIDER_PRIORITY)
         for name in fetch_priority:
             if name == "plain":
                 content = plain_fetch(args.url, cfg, allow_internal=cfg.allow_internal_fetch)
@@ -1410,13 +1429,13 @@ def command_fetch(args: argparse.Namespace, cfg: Config) -> None:
                 warnings.append(f"{name} fetch failed: {exc}")
 
     if content is None:
-        if use_external_extract:
+        if not use_external_extract and "plain" in fetch_priority:
+            content = plain_fetch(args.url, cfg, allow_internal=cfg.allow_internal_fetch)
+            source_type = "plain-http"
+        else:
             content = ""
             source_type = "none"
             warnings.append("No enabled fetch provider returned content.")
-        else:
-            content = plain_fetch(args.url, cfg, allow_internal=cfg.allow_internal_fetch)
-            source_type = "plain-http"
 
     original_length = len(content)
     content, truncated = clamp_text(content, max_chars or None)
@@ -1490,19 +1509,31 @@ def command_map(args: argparse.Namespace, cfg: Config) -> None:
 def command_doctor(args: argparse.Namespace, cfg: Config) -> None:
     del args
     cache_dir = cfg.cache_dir
+    search_priority = provider_priority(cfg, "SEARCH_PROVIDER_PRIORITY", DEFAULT_SEARCH_PROVIDER_PRIORITY)
+    fetch_priority = provider_priority(cfg, "FETCH_PROVIDER_PRIORITY", DEFAULT_FETCH_PROVIDER_PRIORITY)
+    map_priority = provider_priority(cfg, "MAP_PROVIDER_PRIORITY", DEFAULT_MAP_PROVIDER_PRIORITY)
+    provider_enabled = {
+        "grok": "grok" in search_priority,
+        "tavily": any("tavily" in priority for priority in (search_priority, fetch_priority, map_priority)),
+        "firecrawl": "firecrawl" in fetch_priority,
+        "exa": any("exa" in priority for priority in (search_priority, fetch_priority, map_priority)),
+        "plain": "plain" in fetch_priority,
+    }
     checks: dict[str, Any] = {
         "config_file_checked": [str(path) for path in config_file_candidates()],
         "config_files": config_file_statuses(),
+        "active_config_source": cfg.file_values.get(CONFIG_SOURCE_META_KEY, {"source": "injected", "path": ""}),
         "cache_dir": str(cache_dir),
         "cache_dir_exists": cache_dir.exists(),
         "grok_search_upstreams": complete_upstream_count(cfg, "grok_search"),
         "tavily_upstreams": complete_upstream_count(cfg, "tavily"),
         "firecrawl_upstreams": complete_upstream_count(cfg, "firecrawl"),
         "provider_priority": {
-            "search": provider_priority(cfg, "SEARCH_PROVIDER_PRIORITY", DEFAULT_SEARCH_PROVIDER_PRIORITY),
-            "fetch": provider_priority(cfg, "FETCH_PROVIDER_PRIORITY", DEFAULT_FETCH_PROVIDER_PRIORITY),
-            "map": provider_priority(cfg, "MAP_PROVIDER_PRIORITY", DEFAULT_MAP_PROVIDER_PRIORITY),
+            "search": search_priority,
+            "fetch": fetch_priority,
+            "map": map_priority,
         },
+        "provider_enabled": provider_enabled,
         "has_github_token": bool(cfg.get("GITHUB_TOKEN")),
         "environment": env_presence(),
     }
@@ -1511,16 +1542,38 @@ def command_doctor(args: argparse.Namespace, cfg: Config) -> None:
     if grok and grok.get("grok_search_api_key"):
         try:
             api_url = normalize_v1_base(grok.get("grok_search_url", "https://api.x.ai"))
-            probes.append({"name": "ai-provider", "api_url": api_url, "configured": True})
+            probes.append({"name": "ai-provider", "api_url": api_url, "configured": True, "enabled": provider_enabled["grok"]})
         except Exception as exc:  # noqa: BLE001
-            probes.append({"name": "ai-provider", "configured": True, "error": str(exc)})
+            probes.append({"name": "ai-provider", "configured": True, "enabled": provider_enabled["grok"], "error": str(exc)})
     tavily = random_upstream(cfg, "tavily")
     if tavily and tavily.get("tavily_api_key"):
-        probes.append({"name": "tavily", "endpoint": tavily.get("tavily_api_url", "https://api.tavily.com"), "configured": True})
+        probes.append(
+            {
+                "name": "tavily",
+                "endpoint": tavily.get("tavily_api_url", "https://api.tavily.com"),
+                "configured": True,
+                "enabled": provider_enabled["tavily"],
+            }
+        )
     firecrawl = random_upstream(cfg, "firecrawl")
     if firecrawl and firecrawl.get("firecrawl_api_key"):
-        probes.append({"name": "firecrawl", "endpoint": firecrawl.get("firecrawl_api_url", "https://api.firecrawl.dev"), "configured": True})
-    probes.append({"name": "exa-mcp", "endpoint": EXA_MCP_URL, "configured": True, "auth": "free-plan-no-key"})
+        probes.append(
+            {
+                "name": "firecrawl",
+                "endpoint": firecrawl.get("firecrawl_api_url", "https://api.firecrawl.dev"),
+                "configured": True,
+                "enabled": provider_enabled["firecrawl"],
+            }
+        )
+    probes.append(
+        {
+            "name": "exa-mcp",
+            "endpoint": EXA_MCP_URL,
+            "configured": True,
+            "enabled": provider_enabled["exa"],
+            "auth": "free-plan-no-key",
+        }
+    )
     checks["probes"] = probes
     print(json.dumps(checks, ensure_ascii=False, indent=2))
 

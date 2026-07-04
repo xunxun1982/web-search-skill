@@ -47,16 +47,16 @@ Read `references/tools-and-best-practices.md` for command options and output han
 ## Configuration Notes
 
 - Prefer persistent configuration over command-line overrides. Agents should normally pass only task-specific inputs such as `--query`, `--url`, `--session-id`, `--offset`, and `--limit`.
-- Standard user config files have priority over environment variables and skill-local `config.toml`.
+- Standard user config files have priority over environment variables and skill-local `config.toml`. The first source with any effective value wins as a whole; do not assume environment variables supplement a higher-priority config file.
 - Optional tuning flags such as retry counts, source limits, response budgets, timeouts, provider endpoints, cache paths, and similar runtime settings should live in config files. Pass them on the command line only when the user explicitly requests that override.
 - Multiple Grok/OpenAI-compatible upstreams are configured in `config.toml` arrays such as `GROK_SEARCH_UPSTREAMS = [{ ... }]`; environment variables only support single-upstream scalar values.
 - Exa fallback uses the official remote MCP endpoint free plan without local key config.
-- Provider priority is configurable per command with `SEARCH_PROVIDER_PRIORITY`, `FETCH_PROVIDER_PRIORITY`, and `MAP_PROVIDER_PRIORITY`; supported values are `grok,tavily,exa` for search, `tavily,firecrawl,exa,plain` for fetch, and `tavily,exa` for map. Providers omitted from a configured priority list are disabled.
+- Provider priority is configurable per command with `SEARCH_PROVIDER_PRIORITY`, `FETCH_PROVIDER_PRIORITY`, and `MAP_PROVIDER_PRIORITY`; supported values are `grok,tavily,exa` for search, `tavily,firecrawl,exa,plain` for fetch, and `tavily,exa` for map. Providers omitted from a configured priority list are disabled, and an empty or all-invalid list disables every provider for that command.
 - Empty scalar values are treated as missing; optional scalar examples should stay commented out until configured.
 - `GROK_SEARCH_*` upstreams use OpenAI-compatible `/v1/chat/completions`; `doctor` reports the normalized AI `api_url` and redacted environment-variable presence.
-- `doctor` reports `config_files` with path priority and `exists` flags; use that before assuming configuration is missing.
+- `doctor` reports `active_config_source`, `config_files` with path priority and `exists` flags, plus provider priority and enabled state; use that before assuming configuration is missing or enabled.
 - Empty or partially filled upstream objects are ignored.
-- `GROK_SEARCH_ALLOW_INTERNAL_FETCH` defaults to `false`; set it to `true` only when `web_fetch` or `web_map` must read private/internal `http(s)` URLs. Provider endpoints may use private gateways independently.
+- `GROK_SEARCH_ALLOW_INTERNAL_FETCH` defaults to `false`; set it to `true` only when `web_fetch` or `web_map` must read private/internal `http(s)` URLs. Provider endpoints may use private gateways independently. Generic internal `web_fetch` still requires `plain` in `FETCH_PROVIDER_PRIORITY`.
 - Persistent local secrets should prefer the platform-appropriate user config path (`%USERPROFILE%\.config\web-search-skill\config.toml` on Windows, `$HOME/.config/web-search-skill/config.toml` on macOS/Linux) so skill updates do not overwrite them.
 - `WEB_RESEARCH_CONFIG` is a lowest-priority fallback config path in this skill, not an override; non-`.toml` paths are ignored.
 
