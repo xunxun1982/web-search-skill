@@ -235,7 +235,7 @@ def config_value_is_effective(key: str, value: Any) -> bool:
     if isinstance(value, str):
         return bool(value.strip())
     if key.endswith("_provider_priority") and isinstance(value, list):
-        return any(str(item).strip() for item in value)
+        return True
     if key.endswith("_upstreams") and isinstance(value, list):
         provider = key[: -len("_upstreams")]
         return any(
@@ -589,6 +589,8 @@ def exa_mcp_post(endpoint: str, payload: dict[str, Any], cfg: Config, session_id
 
 
 def exa_mcp_tool_call(endpoint: str, tool_name: str, arguments: dict[str, Any], cfg: Config) -> str:
+    # This is only the MCP transport wrapper; callers must handle each tool's
+    # coverage semantics, such as Exa map using ranked search instead of crawl.
     session_id, init_text = exa_mcp_post(
         endpoint,
         {
@@ -988,6 +990,8 @@ def command_search(args: argparse.Namespace, cfg: Config) -> None:
     tavily_result: dict[str, Any] | None = None
     exa_result: dict[str, Any] | None = None
     priority = provider_priority(cfg, "SEARCH_PROVIDER_PRIORITY", DEFAULT_SEARCH_PROVIDER_PRIORITY)
+    if not priority:
+        warnings.append("No search provider is enabled.")
 
     for index, provider in enumerate(priority):
         next_provider = priority[index + 1] if index + 1 < len(priority) else ""
@@ -1318,6 +1322,7 @@ def tavily_map(url: str, cfg: Config, max_results: int) -> list[str] | None:
 
 
 def exa_map(url: str, cfg: Config, max_results: int) -> list[str] | None:
+    """Return a best-effort URL map from Exa's ranked semantic search results."""
     parsed = urllib.parse.urlparse(url)
     # Exa MCP has no dedicated sitemap/crawl tool here; this is a best-effort
     # map fallback based on web_search_advanced_exa ranking, not exhaustive discovery.
