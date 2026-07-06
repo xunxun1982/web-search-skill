@@ -1319,10 +1319,12 @@ def duckduckgo_instant_answer_search(
     )
     sources: list[dict[str, Any]] = []
     seen: set[str] = set()
+    # Tie Instant Answer text to its source so domain filters cannot leave stale answers.
+    answer_source_urls: set[str] = set()
 
     abstract_url = non_blank_text(data.get("AbstractURL"))
     if abstract_url and answer:
-        append_source(
+        if append_source(
             sources,
             seen,
             "duckduckgo",
@@ -1330,12 +1332,13 @@ def duckduckgo_instant_answer_search(
             max_sources=max_sources,
             title=non_blank_text(data.get("Heading")) or abstract_url,
             content=answer,
-        )
+        ):
+            answer_source_urls.add(str(sources[-1].get("url", "")))
 
     definition_url = non_blank_text(data.get("DefinitionURL"))
     definition = non_blank_text(data.get("Definition"))
     if definition_url and definition:
-        append_source(
+        if append_source(
             sources,
             seen,
             "duckduckgo",
@@ -1343,7 +1346,8 @@ def duckduckgo_instant_answer_search(
             max_sources=max_sources,
             title=non_blank_text(data.get("Heading")) or definition_url,
             content=definition,
-        )
+        ) and definition == answer:
+            answer_source_urls.add(str(sources[-1].get("url", "")))
 
     for item in duckduckgo_related_topics(data.get("RelatedTopics")):
         url = item["url"]
@@ -1368,7 +1372,8 @@ def duckduckgo_instant_answer_search(
             if (not include_domains or url_matches_any_domain(str(source.get("url", "")), include_domains))
             and (not exclude_domains or not url_matches_any_domain(str(source.get("url", "")), exclude_domains))
         ]
-        if not sources:
+        filtered_urls = {str(source.get("url", "")) for source in sources}
+        if not sources or not (answer_source_urls & filtered_urls):
             answer = ""
 
     return {

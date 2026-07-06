@@ -192,3 +192,58 @@ class SearchFallbackTests(unittest.TestCase):
         request_json.assert_called_once()
         self.assertEqual(result["answer"], "Instant fallback")
         self.assertEqual([source["url"] for source in result["sources"]], ["https://example.org/instant"])
+
+    def test_duckduckgo_search_clears_instant_answer_when_answer_source_is_filtered(self) -> None:
+        cfg = websearch.Config({})
+
+        with (
+            mock.patch.object(websearch, "request_text", side_effect=websearch.HttpError(429, "rate limited")),
+            mock.patch.object(
+                websearch,
+                "request_json",
+                return_value={
+                    "AbstractText": "Off-domain answer",
+                    "AbstractURL": "https://off-domain.example/instant",
+                    "Heading": "Filtered",
+                    "RelatedTopics": [
+                        {
+                            "Text": "Allowed topic - Allowed snippet",
+                            "FirstURL": "https://example.org/allowed",
+                        },
+                    ],
+                },
+            ),
+        ):
+            result = websearch.duckduckgo_search(
+                cfg,
+                "example",
+                max_sources=5,
+                detailed=False,
+                include_domains=["example.org"],
+                exclude_domains=[],
+                recency_days=None,
+            )
+
+        self.assertEqual(result["answer"], "")
+        self.assertEqual([source["url"] for source in result["sources"]], ["https://example.org/allowed"])
+
+    def test_duckduckgo_search_does_not_use_instant_answer_for_recency_failure(self) -> None:
+        cfg = websearch.Config({})
+
+        with (
+            mock.patch.object(websearch, "request_text", side_effect=websearch.HttpError(429, "rate limited")),
+            mock.patch.object(websearch, "request_json") as request_json,
+        ):
+            result = websearch.duckduckgo_search(
+                cfg,
+                "example",
+                max_sources=5,
+                detailed=False,
+                include_domains=[],
+                exclude_domains=[],
+                recency_days=7,
+            )
+
+        request_json.assert_not_called()
+        self.assertEqual(result["sources"], [])
+        self.assertIn("html search failed", result["skip_reason"])
