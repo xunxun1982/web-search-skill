@@ -69,6 +69,19 @@ MAX_SSE_MESSAGES = 100_000
 MAX_SSE_EVENT_DATA_LINES = 10_000
 MAX_RECENT_URL_CANDIDATES = 1000
 LINE_BREAK_RE = re.compile(r"\r\n|[\r\n]")
+SENSITIVE_NAME_MARKERS = (
+    "token",
+    "key",
+    "secret",
+    "password",
+    "passwd",
+    "auth",
+    "signature",
+    "session",
+    "credential",
+    "jwt",
+    "cookie",
+)
 UTF8_BOM = b"\xef\xbb\xbf"
 DEFAULT_SEARCH_PROVIDER_PRIORITY = ["grok", "tavily", "exa", "duckduckgo"]
 DEFAULT_FETCH_PROVIDER_PRIORITY = ["tavily", "firecrawl", "exa", "plain"]
@@ -259,6 +272,14 @@ def normalize_v1_base(url: str) -> str:
     return base + "/v1"
 
 
+def is_sensitive_name(name: Any) -> bool:
+    parts = [part for part in re.split(r"[^a-z0-9]+", str(name or "").lower()) if part]
+    compact_name = "".join(parts)
+    # Security sanitizers favor over-redaction. Keep short "sig" as a full
+    # name part so ordinary parameters such as "design" remain diagnostic.
+    return "sig" in parts or any(marker in compact_name for marker in SENSITIVE_NAME_MARKERS)
+
+
 def redact_url_for_output(url: str) -> str:
     try:
         parsed = urllib.parse.urlsplit(str(url or ""))
@@ -273,29 +294,11 @@ def redact_url_for_output(url: str) -> str:
 
     query: list[tuple[str, str]] = []
     for key, value in urllib.parse.parse_qsl(parsed.query, keep_blank_values=True):
-        key_parts = {part for part in re.split(r"[^a-z0-9]+", key.lower()) if part}
-        compact_key = "".join(key_parts)
-        sensitive_keys = {
-            "apikey",
-            "accesskey",
-            "authkey",
-            "authtoken",
-            "accesstoken",
-            "bearertoken",
-            "clientsecret",
-        }
-        if compact_key in sensitive_keys or key_parts & {
-            "token",
-            "key",
-            "secret",
-            "password",
-            "passwd",
-            "auth",
-            "signature",
-            "sig",
-        }:
+        if is_sensitive_name(key):
             value = "[redacted]"
         query.append((key, value))
+    # Preserve endpoint paths for diagnostics. Built-in providers do not place
+    # credentials in paths; arbitrary path secrets cannot be identified safely.
     return urllib.parse.urlunsplit((parsed.scheme, netloc, parsed.path, urllib.parse.urlencode(query), ""))
 
 
@@ -625,6 +628,32 @@ class Config:
 def config_secret_values(cfg: Config) -> list[str]:
     secrets: set[str] = set()
 
+    def collect_url_secrets(value: str) -> None:
+        try:
+            parsed = urllib.parse.urlsplit(value)
+        except ValueError:
+            return
+        if parsed.scheme not in {"http", "https"}:
+            return
+        for userinfo in (parsed.username, parsed.password):
+            if userinfo:
+                secrets.add(userinfo)
+                secrets.add(urllib.parse.unquote(userinfo))
+        for item in parsed.query.split("&"):
+            raw_key, separator, raw_value = item.partition("=")
+            if not separator or not is_sensitive_name(urllib.parse.unquote_plus(raw_key)):
+                continue
+            decoded_value = urllib.parse.unquote_plus(raw_value)
+            # Providers may echo the configured URL verbatim or decoded.
+            for candidate in (
+                raw_value,
+                decoded_value,
+                urllib.parse.quote(decoded_value, safe=""),
+                urllib.parse.quote_plus(decoded_value),
+            ):
+                if candidate:
+                    secrets.add(candidate)
+
     def walk(value: Any, key: str = "") -> None:
         if isinstance(value, dict):
             for nested_key, nested_value in value.items():
@@ -632,9 +661,12 @@ def config_secret_values(cfg: Config) -> list[str]:
         elif isinstance(value, list):
             for item in value:
                 walk(item, key)
-        elif isinstance(value, str) and len(value) >= 4:
-            if any(marker in key for marker in ("api_key", "auth_key", "token", "secret", "password")):
+        elif isinstance(value, str):
+            if value and is_sensitive_name(key):
                 secrets.add(value)
+            collect_url_secrets(value)
+        elif value is not None and is_sensitive_name(key):
+            secrets.add(str(value))
 
     walk(cfg.file_values)
     return sorted(secrets, key=len, reverse=True)
@@ -642,11 +674,22 @@ def config_secret_values(cfg: Config) -> list[str]:
 
 def safe_warnings(warnings: list[str], cfg: Config) -> list[str]:
     secrets = config_secret_values(cfg)
+    long_secrets = [secret for secret in secrets if len(secret) >= 4]
+    short_secrets = [secret for secret in secrets if len(secret) < 4]
+    short_secret_pattern = (
+        re.compile(
+            rf"(?<![A-Za-z0-9])(?:{'|'.join(re.escape(secret) for secret in short_secrets)})(?![A-Za-z0-9])"
+        )
+        if short_secrets
+        else None
+    )
     safe: list[str] = []
     for warning in warnings[:MAX_WARNINGS]:
         text = str(warning)
-        for secret in secrets:
+        for secret in long_secrets:
             text = text.replace(secret, "[redacted]")
+        if short_secret_pattern is not None:
+            text = short_secret_pattern.sub("[redacted]", text)
         text = re.sub(r"(?i)(bearer\s+)[^\s,;]+", r"\1[redacted]", text)
         safe.append(clamp_text(text, WARNING_MAX_CHARS)[0])
     return safe

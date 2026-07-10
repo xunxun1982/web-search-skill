@@ -54,7 +54,11 @@ class DoctorTests(unittest.TestCase):
                         "tavily_api_key": "tavily-key",
                         "tavily_api_url": (
                             "https://user:password@tavily.example/api?token=secret&apiKey=secret2"
-                            "&authToken=secret3&clientSecret=secret4&region=us#fragment"
+                            "&authToken=secret3&clientSecret=secret4&sessionToken=secret5"
+                            "&refreshToken=secret6&apiToken=secret7&idToken=secret8&csrfToken=secret9"
+                            "&sessionId=secret10&credential=secret11&jwt=secret12&cookie=secret13"
+                            "&pass-word=secret14"
+                            "&design=visible&region=us#fragment"
                         ),
                     }
                 ],
@@ -87,11 +91,70 @@ class DoctorTests(unittest.TestCase):
                 "apiKey": ["[redacted]"],
                 "authToken": ["[redacted]"],
                 "clientSecret": ["[redacted]"],
+                "sessionToken": ["[redacted]"],
+                "refreshToken": ["[redacted]"],
+                "apiToken": ["[redacted]"],
+                "idToken": ["[redacted]"],
+                "csrfToken": ["[redacted]"],
+                "sessionId": ["[redacted]"],
+                "credential": ["[redacted]"],
+                "jwt": ["[redacted]"],
+                "cookie": ["[redacted]"],
+                "pass-word": ["[redacted]"],
+                "design": ["visible"],
                 "region": ["us"],
             },
         )
         firecrawl_url = urllib.parse.urlsplit(probes["firecrawl"]["endpoint"])
         self.assertEqual(urllib.parse.parse_qs(firecrawl_url.query), {"auth_key": ["[redacted]"]})
+
+    def test_warning_redaction_covers_auth_and_encryption_keys(self) -> None:
+        auth_key = "auth-value-must-not-leak"
+        encryption_key = "encryption-value-must-not-leak"
+        cfg = websearch.Config(
+            {
+                "AUTH_KEY": auth_key,
+                "ENCRYPTION_KEY": encryption_key,
+                "tavily_api_url": (
+                    "https://encoded%2Buser:encoded%2Bpassword@example.com/api?sessionToken=url-secret"
+                    "&encodedToken=a%2Bb+c&region=us"
+                ),
+            }
+        )
+
+        warnings = websearch.safe_warnings(
+            [
+                f"failed with {auth_key} and {encryption_key}",
+                "endpoint sessionToken=url-secret encodedToken=a%2Bb+c region=us",
+                "decoded a+b c percent-space a%2Bb%20c region=us",
+                "userinfo encoded%2Buser encoded%2Bpassword decoded encoded+user encoded+password",
+            ],
+            cfg,
+        )
+
+        self.assertEqual(
+            warnings,
+            [
+                "failed with [redacted] and [redacted]",
+                "endpoint sessionToken=[redacted] encodedToken=[redacted] region=us",
+                "decoded [redacted] percent-space [redacted] region=us",
+                "userinfo [redacted] [redacted] decoded [redacted] [redacted]",
+            ],
+        )
+
+    def test_warning_redaction_bounds_short_auth_and_encryption_keys(self) -> None:
+        cfg = websearch.Config({"AUTH_KEY": "x", "ENCRYPTION_KEY": "yz"})
+
+        warnings = websearch.safe_warnings(["auth=x encryption=yz keep=axylophone"], cfg)
+
+        self.assertEqual(warnings, ["auth=[redacted] encryption=[redacted] keep=axylophone"])
+
+    def test_warning_redaction_covers_non_string_sensitive_values(self) -> None:
+        cfg = websearch.Config({"AUTH_KEY": 123, "ENCRYPTION_KEY": 456})
+
+        warnings = websearch.safe_warnings(["auth=123 encryption=456 keep=1234"], cfg)
+
+        self.assertEqual(warnings, ["auth=[redacted] encryption=[redacted] keep=1234"])
 
 
 class ConfigBomTests(unittest.TestCase):
