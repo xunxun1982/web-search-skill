@@ -32,7 +32,7 @@ TOML example:
 
 ```toml
 # Provider priorities are evaluated in order. Providers omitted from a priority list are disabled.
-# SEARCH_PROVIDER_PRIORITY supports: "grok", "tavily", "exa", "duckduckgo".
+# SEARCH_PROVIDER_PRIORITY supports: "grok", "tavily", "exa", "duckduckgo", "parallel" (opt-in).
 # FETCH_PROVIDER_PRIORITY supports: "tavily", "firecrawl", "exa", "plain".
 # MAP_PROVIDER_PRIORITY supports: "tavily", "exa".
 SEARCH_PROVIDER_PRIORITY = ["grok", "tavily", "exa", "duckduckgo"]
@@ -84,7 +84,7 @@ Environment variables are intentionally limited to scalar values. They cannot de
 | `GITHUB_TOKEN` | Optional token for higher GitHub issue/PR fetch limits and private repositories. |
 | `GROK_SEARCH_TIMEOUT_SECONDS` | HTTP timeout. Default: `120`. |
 | `GROK_SEARCH_MAX_RETRIES` | Additional Grok search retries after the first failed attempt, capped at `5`. Only network failures, timeouts, HTTP `408`, `429`, and `5xx` responses retry; permanent `4xx` responses fall back immediately. Default: `2`. |
-| `SEARCH_PROVIDER_PRIORITY` | `web_search` provider priority. Supported values: `grok`, `tavily`, `exa`, `duckduckgo`. Config files may use a TOML array; environment variables may use comma-separated values. Default: `grok,tavily,exa,duckduckgo`. Omitted providers are disabled when this is configured. |
+| `SEARCH_PROVIDER_PRIORITY` | `web_search` provider priority. Supported values: `grok`, `tavily`, `exa`, `duckduckgo`, `parallel`. Config files may use a TOML array; environment variables may use comma-separated values. Default: `grok,tavily,exa,duckduckgo`. Omitted providers are disabled when this is configured. |
 | `FETCH_PROVIDER_PRIORITY` | Generic `web_fetch` provider priority after specialized fetchers. Supported values: `tavily`, `firecrawl`, `exa`, `plain`. Config files may use a TOML array; environment variables may use comma-separated values. Default: `tavily,firecrawl,exa,plain`. Omitted providers are disabled when this is configured. |
 | `MAP_PROVIDER_PRIORITY` | `web_map` provider priority. Supported values: `tavily`, `exa`. Config files may use a TOML array; environment variables may use comma-separated values. Default: `tavily,exa`. Omitted providers are disabled when this is configured. |
 | `SEARCH_CACHE_DIR` | Optional search session cache directory. Default uses the system temp directory. |
@@ -106,6 +106,26 @@ Environment variables are intentionally limited to scalar values. They cannot de
 - Single-value `GROK_SEARCH_*`, `TAVILY_*`, and `FIRECRAWL_*` keys work as fallback when no upstream table is configured.
 - Empty or partially filled upstream objects are ignored. Upstream array objects must explicitly provide every required field; default endpoint/model values are only used by single-value fallback config.
 - With no provider keys, specialized public fetchers still work for GitHub, StackExchange, arXiv, and Wikipedia URLs.
+
+## Optional Parallel search
+
+[Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) provides free web search in Fast mode without an account or API key, subject to free-tier rate limits. It uses the same bundled Python script and needs no extra packages.
+
+To try it first, add `"parallel"` to `SEARCH_PROVIDER_PRIORITY` in your active config source while keeping any fallbacks you want:
+
+```toml
+SEARCH_PROVIDER_PRIORITY = ["parallel", "grok", "tavily", "exa", "duckduckgo"]
+```
+
+Then run from the skill directory root:
+
+```bash
+python scripts/websearch.py doctor
+python scripts/websearch.py web_search --query "Python asyncio documentation" --format detailed
+python scripts/websearch.py get_sources --session-id "<returned session_id>"
+```
+
+The default provider order stays unchanged. Parallel returns source URLs and excerpts, which are saved for `get_sources`. Domain filters use search operators and local result filtering. Positive `--recency-days` values, including the default 7-day window in news mode, skip Parallel with a warning and continue to the next configured provider. If no provider can return sources, the command reports an empty result and warnings. This integration supports search only; `FETCH_PROVIDER_PRIORITY` and `MAP_PROVIDER_PRIORITY` do not accept `parallel`.
 
 ## Safety
 

@@ -72,7 +72,7 @@ def test_config_example_groups_provider_keys_together():
 
     assert "[[" not in text
     assert text.index("SEARCH_PROVIDER_PRIORITY") < text.index("GROK_SEARCH_UPSTREAMS")
-    assert '# SEARCH_PROVIDER_PRIORITY supports: "grok", "tavily", "exa", "duckduckgo".' in text
+    assert '# SEARCH_PROVIDER_PRIORITY supports: "grok", "tavily", "exa", "duckduckgo", "parallel" (opt-in).' in text
     assert '# FETCH_PROVIDER_PRIORITY supports: "tavily", "firecrawl", "exa", "plain".' in text
     assert '# MAP_PROVIDER_PRIORITY supports: "tavily", "exa".' in text
     assert len(parsed["FIRECRAWL_UPSTREAMS"]) >= 2
@@ -234,6 +234,7 @@ def test_doctor_counts_only_complete_upstreams(capsys):
         "academic": ["grok", "tavily", "exa", "duckduckgo"],
     }
     assert output["provider_enabled"] == {
+        "parallel": False,
         "grok": True,
         "tavily": True,
         "firecrawl": True,
@@ -576,6 +577,7 @@ def test_doctor_reports_provider_enabled_from_priority(capsys):
     output = json.loads(capsys.readouterr().out)
     assert output["provider_priority"] == {"search": [], "fetch": ["tavily"], "map": ["exa"]}
     assert output["provider_enabled"] == {
+        "parallel": False,
         "grok": False,
         "tavily": True,
         "firecrawl": False,

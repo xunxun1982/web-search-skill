@@ -2,7 +2,7 @@
 # Do not commit config.toml with real keys.
 
 # Provider priorities are evaluated in order. Providers omitted from a priority list are disabled.
-# SEARCH_PROVIDER_PRIORITY supports: "grok", "tavily", "exa", "duckduckgo".
+# SEARCH_PROVIDER_PRIORITY supports: "grok", "tavily", "exa", "duckduckgo", "parallel" (opt-in).
 # FETCH_PROVIDER_PRIORITY supports: "tavily", "firecrawl", "exa", "plain".
 # MAP_PROVIDER_PRIORITY supports: "tavily", "exa".
 SEARCH_PROVIDER_PRIORITY = ["grok", "tavily", "exa", "duckduckgo"]
@@ -25,6 +25,9 @@ FIRECRAWL_UPSTREAMS = [
   { FIRECRAWL_API_KEY = "", FIRECRAWL_API_URL = "" },
 ]
 
+# Parallel is opt-in, keyless search via https://search.parallel.ai/mcp.
+# To try it first while retaining fallbacks, add "parallel" at the start of SEARCH_PROVIDER_PRIORITY.
+# Positive recency filters (including the news default) skip Parallel.
 # Exa fallback uses the official free-plan MCP endpoint without local key config.
 # DuckDuckGo fallback uses keyless DuckDuckGo HTML search.
 

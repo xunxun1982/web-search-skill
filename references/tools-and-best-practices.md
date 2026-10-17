@@ -38,7 +38,9 @@ Rules:
 - Grok retries only network failures, timeouts, HTTP `408`, `429`, and `5xx` responses, using bounded backoff. Permanent `4xx` responses fall back immediately. With the default provider priority, after `--grok-max-retries` additional attempts are exhausted, `web_search` uses Tavily, Exa, then keyless DuckDuckGo HTML search fallback.
 - Use `--mode news` only when recency is part of the request; it uses the same `SEARCH_PROVIDER_PRIORITY` as general search and defaults to a 7-day freshness window unless `--recency-days` is provided. Use `--mode academic` only when paper/study discovery is explicit; it uses the same provider priority and does not guess intent.
 - Omit `--grok-max-retries` to use the configured `GROK_SEARCH_MAX_RETRIES`; pass the flag only when the single call should override config.
-- `SEARCH_PROVIDER_PRIORITY` supports `grok`, `tavily`, `exa`, and `duckduckgo`; configured lists disable omitted providers. DuckDuckGo uses keyless HTML search and supports basic domain and recency filters; Instant Answer is only an error candidate when HTML search fails.
+- `SEARCH_PROVIDER_PRIORITY` supports `grok`, `tavily`, `exa`, `duckduckgo`, and opt-in `parallel`; configured lists disable omitted providers. DuckDuckGo uses keyless HTML search and supports basic domain and recency filters; Instant Answer is only an error candidate when HTML search fails.
+
+Parallel setup and its recency limitation are covered in [Optional Parallel search](configuration.md#optional-parallel-search).
 
 ## `web_fetch`
 

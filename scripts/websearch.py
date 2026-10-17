@@ -51,6 +51,7 @@ SUPPORTED_ENV_NAMES = [
 ]
 APP_DIR_NAME = "web-search-skill"
 EXA_MCP_URL = "https://mcp.exa.ai/mcp?tools=web_search_exa,web_fetch_exa,web_search_advanced_exa"
+PARALLEL_MCP_URL = "https://search.parallel.ai/mcp"
 DUCKDUCKGO_HTML_URL = "https://html.duckduckgo.com/html"
 DUCKDUCKGO_INSTANT_ANSWER_URL = "https://api.duckduckgo.com/"
 MCP_PROTOCOL_VERSION = "2025-11-25"
@@ -99,6 +100,7 @@ PROVIDER_LABELS = {
     "tavily": "Tavily",
     "firecrawl": "Firecrawl",
     "exa": "Exa",
+    "parallel": "Parallel",
     "duckduckgo": "DuckDuckGo",
     "plain": "plain HTTP",
 }
@@ -552,6 +554,8 @@ def provider_priority(cfg: "Config", env_name: str, default: list[str]) -> list[
         values = [raw]
 
     allowed = set(default)
+    if env_name == "SEARCH_PROVIDER_PRIORITY":
+        allowed.add("parallel")
     result: list[str] = []
     for value in values:
         normalized = PROVIDER_ALIASES.get(str(value).strip().lower(), str(value).strip().lower())
@@ -1011,7 +1015,7 @@ def exa_mcp_tool_call(endpoint: str, tool_name: str, arguments: dict[str, Any], 
                 parts.append(item["text"])
     text = "\n".join(part for part in parts if part)
     if result.get("isError"):
-        raise HttpError(0, text or "Exa MCP tool returned an error")
+        raise HttpError(0, text or "MCP tool returned an error")
     return text
 
 
@@ -1510,6 +1514,59 @@ def exa_search(
     }
 
 
+def parallel_search(
+    cfg: Config,
+    query: str,
+    *,
+    max_sources: int,
+    detailed: bool,
+    include_domains: list[str],
+    exclude_domains: list[str],
+    recency_days: int | None,
+    search_mode: str = "general",
+) -> dict[str, Any] | None:
+    del detailed, search_mode
+    # Anonymous MCP has no enforced date filter. Let the next configured
+    # provider handle freshness instead of silently weakening the request.
+    if recency_days and recency_days > 0:
+        return {
+            "provider": "parallel",
+            "skip_reason": "does not support an enforced recency filter on anonymous MCP",
+        }
+    search_query = duckduckgo_query(query, include_domains)
+    for domain in exclude_domains:
+        if domain.strip():
+            search_query += f" -site:{domain.strip()}"
+    text = exa_mcp_tool_call(
+        PARALLEL_MCP_URL,
+        "web_search",
+        {"objective": query, "search_queries": [search_query]},
+        cfg,
+    )
+    data = json.loads(text)
+    if not isinstance(data, dict) or not isinstance(data.get("results"), list):
+        raise HttpError(0, "Parallel MCP returned an invalid search response")
+    sources: list[dict[str, Any]] = []
+    seen: set[str] = set()
+    for item in data["results"]:
+        if not isinstance(item, dict):
+            continue
+        url = normalize_source_url(item.get("url"))
+        if not url or (include_domains and not url_matches_any_domain(url, include_domains)):
+            continue
+        if exclude_domains and url_matches_any_domain(url, exclude_domains):
+            continue
+        excerpts = item.get("excerpts")
+        content = "\n\n".join(part for part in excerpts if isinstance(part, str)) if isinstance(excerpts, list) else ""
+        append_source(
+            sources, seen, "parallel", url, max_sources=max_sources,
+            title=item.get("title"), content=content, published_date=item.get("publish_date"),
+        )
+        if len(sources) >= max_sources:
+            break
+    return {"answer": "", "sources": sources, "provider": "parallel"}
+
+
 def duckduckgo_extract_result_url(href: str) -> str:
     value = html.unescape(str(href or "").strip())
     if not value:
@@ -1931,6 +1988,7 @@ def command_search(args: argparse.Namespace, cfg: Config) -> None:
     searchers = {
         "tavily": tavily_search,
         "exa": exa_search,
+        "parallel": parallel_search,
         "duckduckgo": duckduckgo_search,
     }
 
@@ -2465,6 +2523,7 @@ def command_doctor(args: argparse.Namespace, cfg: Config) -> None:
         "tavily": any("tavily" in priority for priority in (search_priority, fetch_priority, map_priority)),
         "firecrawl": "firecrawl" in fetch_priority,
         "exa": any("exa" in priority for priority in (search_priority, fetch_priority, map_priority)),
+        "parallel": "parallel" in search_priority,
         "duckduckgo": "duckduckgo" in search_priority,
         "plain": "plain" in fetch_priority,
     }
@@ -2541,6 +2600,17 @@ def command_doctor(args: argparse.Namespace, cfg: Config) -> None:
             "supports_domain_filter": True,
             "supports_recency_filter": True,
             "instant_answer_fallback_endpoint": DUCKDUCKGO_INSTANT_ANSWER_URL,
+        }
+    )
+    probes.append(
+        {
+            "name": "parallel-mcp",
+            "endpoint": PARALLEL_MCP_URL,
+            "configured": True,
+            "enabled": provider_enabled["parallel"],
+            "auth": "no-key",
+            "supports_domain_filter": True,
+            "supports_recency_filter": False,
         }
     )
     checks["probes"] = probes

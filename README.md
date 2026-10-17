@@ -34,7 +34,7 @@ Important details:
 - Environment variables are useful as their own source for single-upstream keys (`GROK_SEARCH_API_KEY`, `GROK_SEARCH_URL`, `GROK_SEARCH_MODEL`, `TAVILY_API_KEY`, `TAVILY_API_URL`, `FIRECRAWL_API_KEY`, `FIRECRAWL_API_URL`) and scalar settings such as `GITHUB_TOKEN`, `GROK_SEARCH_TIMEOUT_SECONDS`, `GROK_SEARCH_MAX_RETRIES`, `SEARCH_PROVIDER_PRIORITY`, `FETCH_PROVIDER_PRIORITY`, `MAP_PROVIDER_PRIORITY`, `SEARCH_CACHE_DIR`, `GROK_SEARCH_FETCH_MAX_CHARS`, `GROK_SEARCH_ALLOW_INTERNAL_FETCH`, and `GROK_SEARCH_RESPONSE_MAX_CHARS`.
 - Exa fallback uses the official remote MCP endpoint free plan without local Exa key config. DuckDuckGo fallback uses keyless DuckDuckGo HTML search, with Instant Answer used only as an error candidate when HTML search fails.
 - `GROK_SEARCH_MAX_RETRIES` controls additional Grok `web_search` retries after the first failed attempt and is capped at `5`. Only network failures, timeouts, HTTP `408`, `429`, and `5xx` responses retry; permanent `4xx` responses fall back immediately. Default fallback order is Tavily, Exa, then DuckDuckGo, and provider priorities can be adjusted per command.
-- Provider priority values are `grok,tavily,exa,duckduckgo` for `SEARCH_PROVIDER_PRIORITY`, `tavily,firecrawl,exa,plain` for `FETCH_PROVIDER_PRIORITY`, and `tavily,exa` for `MAP_PROVIDER_PRIORITY`; omitted providers are disabled when a priority list is configured, and an empty or all-invalid list disables every provider for that command.
+- Supported provider priority values are `grok,tavily,exa,duckduckgo,parallel` for `SEARCH_PROVIDER_PRIORITY`, `tavily,firecrawl,exa,plain` for `FETCH_PROVIDER_PRIORITY`, and `tavily,exa` for `MAP_PROVIDER_PRIORITY`; omitted providers are disabled when a priority list is configured, and an empty or all-invalid list disables every provider for that command.
 - `web_search --mode` supports `general`, `news`, and `academic`. All modes use `SEARCH_PROVIDER_PRIORITY`; `news` also applies a default 7-day recency filter unless `--recency-days` is passed. `academic` is an explicit routing hint and does not reorder providers.
 - `web_search --grok-max-retries` is a per-call override. If omitted, the merged config value is used.
 - `WEB_RESEARCH_CONFIG` is a fallback config path in the current implementation. It does not override standard user config files, environment variables, or skill-local config, and non-`.toml` paths are ignored.
@@ -62,7 +62,7 @@ User or skill-local `config.toml` example:
 
 ```toml
 # Provider priorities are evaluated in order. Providers omitted from a priority list are disabled.
-# SEARCH_PROVIDER_PRIORITY supports: "grok", "tavily", "exa", "duckduckgo".
+# SEARCH_PROVIDER_PRIORITY supports: "grok", "tavily", "exa", "duckduckgo", "parallel" (opt-in).
 # FETCH_PROVIDER_PRIORITY supports: "tavily", "firecrawl", "exa", "plain".
 # MAP_PROVIDER_PRIORITY supports: "tavily", "exa".
 SEARCH_PROVIDER_PRIORITY = ["grok", "tavily", "exa", "duckduckgo"]
@@ -99,6 +99,26 @@ User and fallback config file locations:
 - `%USERPROFILE%\.config\web-search-skill\config.toml`
 - `$HOME/.config/web-search-skill/config.toml`
 - TOML path from `WEB_RESEARCH_CONFIG` (must end with `.toml`)
+
+## Optional Parallel search
+
+[Parallel Search MCP](https://docs.parallel.ai/integrations/mcp/search-mcp) provides free web search in Fast mode without an account or API key, subject to free-tier rate limits. It uses the same bundled Python script and needs no extra packages.
+
+To try it first, add `"parallel"` to `SEARCH_PROVIDER_PRIORITY` in your active config source while keeping any fallbacks you want:
+
+```toml
+SEARCH_PROVIDER_PRIORITY = ["parallel", "grok", "tavily", "exa", "duckduckgo"]
+```
+
+Then run from the skill directory root:
+
+```bash
+python scripts/websearch.py doctor
+python scripts/websearch.py web_search --query "Python asyncio documentation" --format detailed
+python scripts/websearch.py get_sources --session-id "<returned session_id>"
+```
+
+The default provider order stays unchanged. Parallel returns source URLs and excerpts, which are saved for `get_sources`. Domain filters use search operators and local result filtering. Positive `--recency-days` values, including the default 7-day window in news mode, skip Parallel with a warning and continue to the next configured provider. If no provider can return sources, the command reports an empty result and warnings. This integration supports search only; `FETCH_PROVIDER_PRIORITY` and `MAP_PROVIDER_PRIORITY` do not accept `parallel`.
 
 ## Usage
 
